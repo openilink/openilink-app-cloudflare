@@ -1,6 +1,6 @@
 /**
  * Analytics Tools
- * 提供 Cloudflare 域名流量统计和配置查看能力
+ * 提供 Cloudflare 域名流量统计、配置查看、流量分析能力
  */
 import type Cloudflare from "cloudflare";
 import type { ToolDefinition, ToolHandler } from "../hub/types.js";
@@ -28,6 +28,19 @@ const definitions: ToolDefinition[] = [
       type: "object",
       properties: {
         zone_id: { type: "string", description: "域名 Zone ID" },
+      },
+      required: ["zone_id"],
+    },
+  },
+  {
+    name: "get_traffic_analytics",
+    description: "获取域名的流量分析数据（请求量、带宽、威胁等）",
+    command: "get_traffic_analytics",
+    parameters: {
+      type: "object",
+      properties: {
+        zone_id: { type: "string", description: "域名 Zone ID" },
+        since: { type: "string", description: "开始时间（ISO 格式），默认 24 小时前（可选）" },
       },
       required: ["zone_id"],
     },
@@ -100,6 +113,130 @@ function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
       return lines.join("\n");
     } catch (err: any) {
       return `获取域名配置失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 流量分析
+  handlers.set("get_traffic_analytics", async (ctx) => {
+    const zoneId: string = ctx.args.zone_id ?? "";
+    const since: string = ctx.args.since ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    try {
+      const client = getClient() as any;
+
+      // 尝试使用 GraphQL Analytics API
+      // 先通过 zones.analytics.dashboard 获取仪表板数据
+      let analyticsData: any = null;
+
+      try {
+        // 优先尝试 dashboard API
+        analyticsData = await client.zones.analytics.dashboard.get({
+          zone_id: zoneId,
+          since,
+          until: new Date().toISOString(),
+          continuous: true,
+        });
+      } catch {
+        // 回退: 通过通用 HTTP 请求获取
+        try {
+          const sinceParam = encodeURIComponent(since);
+          const untilParam = encodeURIComponent(new Date().toISOString());
+          analyticsData = await client.get(
+            `/zones/${zoneId}/analytics/dashboard?since=${sinceParam}&until=${untilParam}&continuous=true`
+          );
+        } catch {
+          // 最终回退
+        }
+      }
+
+      if (!analyticsData) {
+        // 如果 API 不可用，提供基本信息和指引
+        const zoneRes = await getClient().zones.get({ zone_id: zoneId });
+        const zone = zoneRes as any;
+
+        return [
+          `流量分析: ${zone.name}`,
+          "",
+          "当前 API Token 可能缺少 Analytics 读取权限，无法获取详细流量数据。",
+          "",
+          "查看流量分析的方式:",
+          "1. Cloudflare Dashboard → Analytics & Logs → Traffic",
+          "2. 确保 API Token 包含 Zone Analytics:Read 权限",
+          "3. 使用 GraphQL Analytics API: https://developers.cloudflare.com/analytics/graphql-api/",
+        ].join("\n");
+      }
+
+      const data = analyticsData as any;
+      const totals = data.totals ?? data.result?.totals ?? {};
+      const timeseries = data.timeseries ?? data.result?.timeseries ?? [];
+
+      const lines = [
+        `流量分析（从 ${since} 起）:`,
+        "",
+      ];
+
+      // 请求统计
+      if (totals.requests) {
+        const req = totals.requests;
+        lines.push("📊 请求统计:");
+        lines.push(`  总请求数: ${req.all?.toLocaleString() ?? "N/A"}`);
+        lines.push(`  缓存命中: ${req.cached?.toLocaleString() ?? "N/A"}`);
+        lines.push(`  未缓存: ${req.uncached?.toLocaleString() ?? "N/A"}`);
+
+        if (req.ssl) {
+          lines.push(`  HTTPS 请求: ${req.ssl?.encrypted?.toLocaleString() ?? "N/A"}`);
+          lines.push(`  HTTP 请求: ${req.ssl?.unencrypted?.toLocaleString() ?? "N/A"}`);
+        }
+      }
+
+      // 带宽统计
+      if (totals.bandwidth) {
+        const bw = totals.bandwidth;
+        const formatBytes = (bytes: number) => {
+          if (!bytes) return "0 B";
+          const units = ["B", "KB", "MB", "GB", "TB"];
+          const i = Math.floor(Math.log(bytes) / Math.log(1024));
+          return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
+        };
+
+        lines.push("");
+        lines.push("📶 带宽统计:");
+        lines.push(`  总带宽: ${formatBytes(bw.all)}`);
+        lines.push(`  缓存带宽: ${formatBytes(bw.cached)}`);
+        lines.push(`  未缓存带宽: ${formatBytes(bw.uncached)}`);
+      }
+
+      // 威胁统计
+      if (totals.threats) {
+        const threats = totals.threats;
+        lines.push("");
+        lines.push("🛡 威胁统计:");
+        lines.push(`  总威胁数: ${threats.all?.toLocaleString() ?? "0"}`);
+      }
+
+      // 页面浏览
+      if (totals.pageviews) {
+        lines.push("");
+        lines.push("📄 页面浏览:");
+        lines.push(`  总页面浏览: ${totals.pageviews.all?.toLocaleString() ?? "N/A"}`);
+      }
+
+      // 独立访客
+      if (totals.uniques) {
+        lines.push("");
+        lines.push("👤 独立访客:");
+        lines.push(`  总独立访客: ${totals.uniques.all?.toLocaleString() ?? "N/A"}`);
+      }
+
+      // 时间序列摘要
+      if (timeseries.length > 0) {
+        lines.push("");
+        lines.push(`📈 数据点数: ${timeseries.length} 个时间段`);
+      }
+
+      return lines.join("\n");
+    } catch (err: any) {
+      return `获取流量分析失败: ${err.message ?? err}`;
     }
   });
 

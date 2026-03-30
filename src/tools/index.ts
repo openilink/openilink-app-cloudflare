@@ -39,7 +39,11 @@ import { cacheTools } from "./cache.js";
 import { analyticsTools } from "./analytics.js";
 import { sslTools } from "./ssl.js";
 import { r2Tools } from "./r2.js";
-import { firewallTools } from "./firewall.js";
+import { securityTools } from "./security.js";
+import { d1Tools } from "./d1.js";
+import { kvTools } from "./kv.js";
+import { tunnelsTools } from "./tunnels.js";
+import { pagesTools } from "./pages.js";
 
 /** 所有 tool 模块列表 */
 const modules: ToolModule[] = [
@@ -49,7 +53,11 @@ const modules: ToolModule[] = [
   analyticsTools,
   sslTools,
   r2Tools,
-  firewallTools,
+  securityTools,
+  d1Tools,
+  kvTools,
+  tunnelsTools,
+  pagesTools,
 ];
 
 /**

@@ -1,6 +1,6 @@
 /**
  * R2 Tools
- * 提供 Cloudflare R2 存储桶的列出、对象浏览和桶详情能力
+ * 提供 Cloudflare R2 存储桶的列出、对象浏览、桶详情、创建、删除能力
  */
 import type Cloudflare from "cloudflare";
 import type { ToolDefinition, ToolHandler } from "../hub/types.js";
@@ -38,6 +38,32 @@ const definitions: ToolDefinition[] = [
     name: "get_r2_bucket_info",
     description: "获取 R2 桶的详细信息",
     command: "get_r2_bucket_info",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        bucket_name: { type: "string", description: "R2 桶名称" },
+      },
+      required: ["account_id", "bucket_name"],
+    },
+  },
+  {
+    name: "create_r2_bucket",
+    description: "创建 R2 存储桶",
+    command: "create_r2_bucket",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        name: { type: "string", description: "桶名称（全局唯一）" },
+      },
+      required: ["account_id", "name"],
+    },
+  },
+  {
+    name: "delete_r2_bucket",
+    description: "删除 R2 存储桶（桶必须为空）",
+    command: "delete_r2_bucket",
     parameters: {
       type: "object",
       properties: {
@@ -110,6 +136,34 @@ function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
       return lines.join("\n");
     } catch (err: any) {
       return `获取 R2 桶详情失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 创建 R2 桶
+  handlers.set("create_r2_bucket", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const name: string = ctx.args.name ?? "";
+
+    try {
+      const res = await getClient().r2.buckets.create({ account_id: accountId, name });
+      const bucket = res as any;
+
+      return `R2 存储桶创建成功!\n名称: ${bucket.name ?? name}\n位置: ${bucket.location ?? "auto"}`;
+    } catch (err: any) {
+      return `创建 R2 桶失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 删除 R2 桶
+  handlers.set("delete_r2_bucket", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const bucketName: string = ctx.args.bucket_name ?? "";
+
+    try {
+      await getClient().r2.buckets.delete(bucketName, { account_id: accountId });
+      return `R2 存储桶已删除!\n桶名称: ${bucketName}\n\n注意: 删除操作不可恢复。`;
+    } catch (err: any) {
+      return `删除 R2 桶失败: ${err.message ?? err}`;
     }
   });
 

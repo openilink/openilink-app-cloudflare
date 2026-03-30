@@ -1,6 +1,6 @@
 /**
  * Workers Tools
- * 提供 Cloudflare Workers 的列出、详情、路由、日志查看能力
+ * 提供 Cloudflare Workers 的列出、详情、路由、日志查看、部署、删除、定时触发器能力
  */
 import type Cloudflare from "cloudflare";
 import type { ToolDefinition, ToolHandler } from "../hub/types.js";
@@ -49,6 +49,46 @@ const definitions: ToolDefinition[] = [
     name: "get_worker_logs",
     description: "查看 Worker 的最近日志（Tail）",
     command: "get_worker_logs",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        script_name: { type: "string", description: "Worker 脚本名称" },
+      },
+      required: ["account_id", "script_name"],
+    },
+  },
+  {
+    name: "deploy_worker",
+    description: "部署 Worker 脚本（上传脚本内容）",
+    command: "deploy_worker",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        script_name: { type: "string", description: "Worker 脚本名称" },
+        script_content: { type: "string", description: "Worker 脚本源码内容" },
+      },
+      required: ["account_id", "script_name", "script_content"],
+    },
+  },
+  {
+    name: "delete_worker",
+    description: "删除指定 Worker 脚本",
+    command: "delete_worker",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        script_name: { type: "string", description: "Worker 脚本名称" },
+      },
+      required: ["account_id", "script_name"],
+    },
+  },
+  {
+    name: "list_worker_cron_triggers",
+    description: "列出 Worker 的定时触发器（Cron Triggers）",
+    command: "list_worker_cron_triggers",
     parameters: {
       type: "object",
       properties: {
@@ -171,6 +211,76 @@ function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
       return lines.join("\n");
     } catch (err: any) {
       return `获取 Worker 日志失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 部署 Worker 脚本
+  handlers.set("deploy_worker", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const scriptName: string = ctx.args.script_name ?? "";
+    const scriptContent: string = ctx.args.script_content ?? "";
+
+    try {
+      // scripts.update 需要 multipart/form-data，SDK 支持直接传字符串 body
+      await (getClient() as any).workers.scripts.update(scriptName, {
+        account_id: accountId,
+        // 以 metadata + body 形式上传脚本
+        metadata: { main_module: "worker.js" },
+        "worker.js": new Blob([scriptContent], { type: "application/javascript" }),
+      });
+
+      return `Worker 脚本部署成功!\n脚本名称: ${scriptName}\n\n提示: 如果部署失败或需要更复杂的配置（绑定、环境变量等），建议使用 wrangler CLI:\n  wrangler deploy`;
+    } catch (err: any) {
+      // 部署可能因为 SDK 接口变化而失败，给出友好提示
+      return [
+        `部署 Worker 脚本失败: ${err.message ?? err}`,
+        "",
+        "建议使用 wrangler CLI 进行部署:",
+        `  wrangler deploy --name ${scriptName}`,
+        "",
+        "或通过 Cloudflare Dashboard → Workers → 选择脚本 → Quick Edit 在线编辑。",
+      ].join("\n");
+    }
+  });
+
+  // 删除 Worker 脚本
+  handlers.set("delete_worker", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const scriptName: string = ctx.args.script_name ?? "";
+
+    try {
+      await getClient().workers.scripts.delete(scriptName, { account_id: accountId });
+      return `Worker 脚本已删除!\n脚本名称: ${scriptName}`;
+    } catch (err: any) {
+      return `删除 Worker 脚本失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 列出 Worker 定时触发器
+  handlers.set("list_worker_cron_triggers", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const scriptName: string = ctx.args.script_name ?? "";
+
+    try {
+      const res = await (getClient() as any).workers.scripts.schedules.get(scriptName, {
+        account_id: accountId,
+      });
+      const schedules = res.schedules ?? res.result ?? [];
+
+      if (Array.isArray(schedules) && schedules.length === 0) {
+        return `Worker "${scriptName}" 暂无定时触发器`;
+      }
+
+      const items = Array.isArray(schedules) ? schedules : [schedules];
+      const lines = items.map((s: any, i: number) => {
+        const cron = s.cron ?? "N/A";
+        const created = s.created_on ?? "N/A";
+        return `${i + 1}. ${cron}\n   创建时间: ${created}`;
+      });
+
+      return `Worker "${scriptName}" 定时触发器（共 ${items.length} 个）:\n${lines.join("\n")}`;
+    } catch (err: any) {
+      return `列出定时触发器失败: ${err.message ?? err}`;
     }
   });
 
