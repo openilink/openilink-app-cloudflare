@@ -45,6 +45,7 @@ import { kvTools } from "./kv.js";
 import { tunnelsTools } from "./tunnels.js";
 import { pagesTools } from "./pages.js";
 import { zonesTools } from "./zones.js";
+import { apiTools } from "./api.js";
 
 /** 所有 tool 模块列表 */
 const modules: ToolModule[] = [
@@ -60,6 +61,7 @@ const modules: ToolModule[] = [
   tunnelsTools,
   pagesTools,
   zonesTools,
+  apiTools,
 ];
 
 /**
