@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8099:8099"
+    environment:
+      HUB_URL: "${HUB_URL}"
+      BASE_URL: "${BASE_URL}"
+      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN}"
+      CLOUDFLARE_ACCOUNT_ID: "${CLOUDFLARE_ACCOUNT_ID}"
+      DB_PATH: /data/cloudflare.db
+    volumes:
+      - app-data:/data
+    restart: unless-stopped
+
+volumes:
+  app-data:
