@@ -10,7 +10,7 @@ export interface Config {
   baseUrl: string;
   /** SQLite 数据库路径 */
   dbPath: string;
-  /** Cloudflare API Token（必填） */
+  /** Cloudflare API Token（可选，云端托管模式下由用户在安装时填写） */
   cloudflareApiToken: string;
   /** Cloudflare Account ID（可选，部分 API 需要） */
   cloudflareAccountId: string;
@@ -30,10 +30,10 @@ export function loadConfig(): Config {
     cloudflareAccountId: env("CLOUDFLARE_ACCOUNT_ID"),
   };
 
+  // cloudflareApiToken 在云端托管模式下由用户安装时填写，不再强制校验
   const missing: string[] = [];
   if (!cfg.hubUrl) missing.push("HUB_URL");
   if (!cfg.baseUrl) missing.push("BASE_URL");
-  if (!cfg.cloudflareApiToken) missing.push("CLOUDFLARE_API_TOKEN");
 
   if (missing.length > 0) {
     throw new Error(`缺少必填环境变量: ${missing.join(", ")}`);

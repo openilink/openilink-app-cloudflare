@@ -74,6 +74,8 @@ export function getManifest(
       "- Account: Workers R2 Storage (Read/Write) — R2 存储管理",
       "### 第 4 步",
       "复制生成的 API Token 填入上方配置并安装",
+      "",
+      "安装后可通过 /settings 页面随时修改配置。",
     ].join("\n"),
   };
 }

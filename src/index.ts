@@ -14,6 +14,7 @@ import { HubClient } from "./hub/client.js";
 import { Router } from "./router.js";
 import { handleWebhook } from "./hub/webhook.js";
 import { handleOAuthSetup, handleOAuthRedirect } from "./hub/oauth.js";
+import { handleSettingsPage, handleSettingsVerify, handleSettingsSave } from "./hub/settings.js";
 import { getManifest } from "./hub/manifest.js";
 import { collectAllTools, setCurrentClient } from "./tools/index.js";
 import type { HubEvent, Installation } from "./hub/types.js";
@@ -94,9 +95,27 @@ async function main(): Promise<void> {
         return;
       }
 
-      // GET /oauth/setup - OAuth 安装流程
-      if (method === "GET" && pathname === "/oauth/setup") {
-        handleOAuthSetup(req, res, config);
+      // GET/POST /oauth/setup - OAuth 安装流程（GET 显示表单 / POST 提交表单）
+      if (pathname === "/oauth/setup" && (method === "GET" || method === "POST")) {
+        await handleOAuthSetup(req, res, config);
+        return;
+      }
+
+      // GET /settings — 设置页面
+      if (method === "GET" && pathname === "/settings") {
+        handleSettingsPage(req, res);
+        return;
+      }
+
+      // POST /settings/verify — 验证身份
+      if (method === "POST" && pathname === "/settings/verify") {
+        await handleSettingsVerify(req, res, config, store);
+        return;
+      }
+
+      // POST /settings/save — 保存配置
+      if (method === "POST" && pathname === "/settings/save") {
+        await handleSettingsSave(req, res, config, store);
         return;
       }
 
