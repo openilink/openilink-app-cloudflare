@@ -69,6 +69,66 @@ const definitions: ToolDefinition[] = [
       required: ["zone_id"],
     },
   },
+  {
+    name: "delete_ip_block",
+    description: "取消 IP 封禁（删除 Access Rule）",
+    command: "delete_ip_block",
+    parameters: {
+      type: "object",
+      properties: {
+        zone_id: { type: "string", description: "域名 Zone ID" },
+        rule_id: { type: "string", description: "Access Rule ID（通过 list_firewall_rules 获取）" },
+      },
+      required: ["zone_id", "rule_id"],
+    },
+  },
+  {
+    name: "create_waf_rule",
+    description: "创建 WAF 自定义规则（基于表达式的安全规则）",
+    command: "create_waf_rule",
+    parameters: {
+      type: "object",
+      properties: {
+        zone_id: { type: "string", description: "域名 Zone ID" },
+        description: { type: "string", description: "规则描述" },
+        expression: { type: "string", description: "规则表达式（Cloudflare 过滤器语法，如 ip.src == 1.2.3.4）" },
+        action: { type: "string", description: "触发动作: block / challenge / js_challenge / managed_challenge / log" },
+      },
+      required: ["zone_id", "expression", "action"],
+    },
+  },
+  {
+    name: "update_waf_rule",
+    description: "更新 WAF 自定义规则",
+    command: "update_waf_rule",
+    parameters: {
+      type: "object",
+      properties: {
+        zone_id: { type: "string", description: "域名 Zone ID" },
+        ruleset_id: { type: "string", description: "Ruleset ID" },
+        rule_id: { type: "string", description: "Rule ID" },
+        description: { type: "string", description: "规则描述（可选）" },
+        expression: { type: "string", description: "规则表达式（可选）" },
+        action: { type: "string", description: "触发动作（可选）" },
+        enabled: { type: "boolean", description: "是否启用（可选）" },
+      },
+      required: ["zone_id", "ruleset_id", "rule_id"],
+    },
+  },
+  {
+    name: "delete_waf_rule",
+    description: "删除 WAF 自定义规则",
+    command: "delete_waf_rule",
+    parameters: {
+      type: "object",
+      properties: {
+        zone_id: { type: "string", description: "域名 Zone ID" },
+        ruleset_id: { type: "string", description: "Ruleset ID" },
+        rule_id: { type: "string", description: "Rule ID" },
+      },
+      required: ["zone_id", "ruleset_id", "rule_id"],
+    },
+  },
 ];
 
 /** 创建 Security 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
@@ -219,6 +279,128 @@ function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
       return `速率限制规则列表（共 ${items.length} 条）:\n${lines.join("\n")}`;
     } catch (err: any) {
       return `列出速率限制失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 取消 IP 封禁
+  handlers.set("delete_ip_block", async (ctx) => {
+    const zoneId: string = ctx.args.zone_id ?? "";
+    const ruleId: string = ctx.args.rule_id ?? "";
+
+    try {
+      const client = getClient() as any;
+      await client.firewall.accessRules.rules.delete(ruleId, {
+        zone_id: zoneId,
+      });
+
+      return `IP 封禁已取消!\n规则 ID: ${ruleId}`;
+    } catch (err: any) {
+      return `取消 IP 封禁失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 创建 WAF 自定义规则
+  handlers.set("create_waf_rule", async (ctx) => {
+    const zoneId: string = ctx.args.zone_id ?? "";
+    const description: string = ctx.args.description ?? "";
+    const expression: string = ctx.args.expression ?? "";
+    const action: string = ctx.args.action ?? "block";
+
+    try {
+      const client = getClient() as any;
+
+      // 先查找 http_request_firewall_custom 阶段的 ruleset
+      let rulesetId: string | null = null;
+      try {
+        const rulesets = await client.rulesets.list({ zone_id: zoneId });
+        const items = rulesets.result ?? rulesets ?? [];
+        const arr = Array.isArray(items) ? items : [items];
+        const customRuleset = arr.find(
+          (rs: any) => rs.phase === "http_request_firewall_custom"
+        );
+        if (customRuleset) {
+          rulesetId = customRuleset.id;
+        }
+      } catch {
+        // 忽略，使用创建新 ruleset 的方式
+      }
+
+      let result: any;
+      if (rulesetId) {
+        // 向已有 ruleset 追加规则
+        result = await client.rulesets.rules.create(rulesetId, {
+          zone_id: zoneId,
+          action,
+          expression,
+          description,
+          enabled: true,
+        });
+      } else {
+        // 创建新的 custom ruleset
+        result = await client.rulesets.create({
+          zone_id: zoneId,
+          name: "OpeniLink 自定义 WAF 规则集",
+          kind: "zone",
+          phase: "http_request_firewall_custom",
+          rules: [
+            {
+              action,
+              expression,
+              description,
+              enabled: true,
+            },
+          ],
+        });
+      }
+
+      return `WAF 自定义规则创建成功!\n动作: ${action}\n表达式: ${expression}\n描述: ${description || "（无）"}\n\n提示: 可在 Cloudflare Dashboard → Security → WAF 中查看和管理。`;
+    } catch (err: any) {
+      return `创建 WAF 规则失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 更新 WAF 自定义规则
+  handlers.set("update_waf_rule", async (ctx) => {
+    const zoneId: string = ctx.args.zone_id ?? "";
+    const rulesetId: string = ctx.args.ruleset_id ?? "";
+    const ruleId: string = ctx.args.rule_id ?? "";
+    const description: string | undefined = ctx.args.description;
+    const expression: string | undefined = ctx.args.expression;
+    const action: string | undefined = ctx.args.action;
+    const enabled: boolean | undefined = ctx.args.enabled;
+
+    try {
+      const client = getClient() as any;
+
+      const updateParams: any = { zone_id: zoneId };
+      if (description !== undefined) updateParams.description = description;
+      if (expression !== undefined) updateParams.expression = expression;
+      if (action !== undefined) updateParams.action = action;
+      if (enabled !== undefined) updateParams.enabled = enabled;
+
+      await client.rulesets.rules.edit(rulesetId, ruleId, updateParams);
+
+      return `WAF 规则更新成功!\nRuleset ID: ${rulesetId}\nRule ID: ${ruleId}`;
+    } catch (err: any) {
+      return `更新 WAF 规则失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 删除 WAF 自定义规则
+  handlers.set("delete_waf_rule", async (ctx) => {
+    const zoneId: string = ctx.args.zone_id ?? "";
+    const rulesetId: string = ctx.args.ruleset_id ?? "";
+    const ruleId: string = ctx.args.rule_id ?? "";
+
+    try {
+      const client = getClient() as any;
+      await client.rulesets.rules.delete(rulesetId, ruleId, {
+        zone_id: zoneId,
+      });
+
+      return `WAF 规则已删除!\nRuleset ID: ${rulesetId}\nRule ID: ${ruleId}`;
+    } catch (err: any) {
+      return `删除 WAF 规则失败: ${err.message ?? err}`;
     }
   });
 

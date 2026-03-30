@@ -46,6 +46,33 @@ const definitions: ToolDefinition[] = [
       required: ["account_id", "project_name"],
     },
   },
+  {
+    name: "delete_pages_project",
+    description: "删除 Pages 项目（包含所有部署记录）",
+    command: "delete_pages_project",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        project_name: { type: "string", description: "Pages 项目名称" },
+      },
+      required: ["account_id", "project_name"],
+    },
+  },
+  {
+    name: "retry_pages_deployment",
+    description: "重试 Pages 项目的最近一次部署",
+    command: "retry_pages_deployment",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        project_name: { type: "string", description: "Pages 项目名称" },
+        deployment_id: { type: "string", description: "部署 ID（指定重试哪次部署）" },
+      },
+      required: ["account_id", "project_name", "deployment_id"],
+    },
+  },
 ];
 
 /** 创建 Pages 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
@@ -169,6 +196,51 @@ function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
       return result;
     } catch (err: any) {
       return `列出 Pages 部署记录失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 删除 Pages 项目
+  handlers.set("delete_pages_project", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const projectName: string = ctx.args.project_name ?? "";
+
+    try {
+      const client = getClient() as any;
+      await client.pages.projects.delete(projectName, { account_id: accountId });
+
+      return `Pages 项目已删除!\n项目名称: ${projectName}\n\n注意: 所有部署记录和自定义域名绑定将一并删除，操作不可恢复。`;
+    } catch (err: any) {
+      return `删除 Pages 项目失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 重试 Pages 部署
+  handlers.set("retry_pages_deployment", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const projectName: string = ctx.args.project_name ?? "";
+    const deploymentId: string = ctx.args.deployment_id ?? "";
+
+    try {
+      const client = getClient() as any;
+      const res = await client.pages.projects.deployments.retry(projectName, deploymentId, {
+        account_id: accountId,
+      });
+      const deployment = res as any;
+
+      const lines = [
+        "Pages 部署重试已触发!",
+        `项目: ${projectName}`,
+        `部署 ID: ${deployment.id ?? deploymentId}`,
+        `状态: ${deployment.latest_stage?.status ?? "pending"}`,
+      ];
+
+      if (deployment.url) {
+        lines.push(`URL: ${deployment.url}`);
+      }
+
+      return lines.join("\n");
+    } catch (err: any) {
+      return `重试 Pages 部署失败: ${err.message ?? err}`;
     }
   });
 

@@ -45,6 +45,18 @@ const definitions: ToolDefinition[] = [
       required: ["zone_id"],
     },
   },
+  {
+    name: "get_web_analytics",
+    description: "获取 Web Analytics 站点列表和概览（无需修改网站代码的免费分析）",
+    command: "get_web_analytics",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+      },
+      required: ["account_id"],
+    },
+  },
 ];
 
 /** 创建 Analytics 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
@@ -237,6 +249,35 @@ function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
       return lines.join("\n");
     } catch (err: any) {
       return `获取流量分析失败: ${err.message ?? err}`;
+    }
+  });
+
+  // Web Analytics 站点列表
+  handlers.set("get_web_analytics", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+
+    try {
+      const client = getClient() as any;
+
+      // Web Analytics 使用 rum 端点
+      const res = await client.rum.siteInfo.list({ account_id: accountId });
+      const sites = res.result ?? res ?? [];
+
+      if (Array.isArray(sites) && sites.length === 0) {
+        return "暂无 Web Analytics 站点\n\n提示: 可在 Cloudflare Dashboard → Analytics & Logs → Web Analytics 中添加站点。";
+      }
+
+      const items = Array.isArray(sites) ? sites : [sites];
+      const lines = items.map((s: any, i: number) => {
+        const host = s.host ?? s.hostname ?? "N/A";
+        const created = s.created ?? s.created_on ?? "N/A";
+        const siteTag = s.site_tag ?? s.tag ?? "N/A";
+        return `${i + 1}. ${host}\n   Site Tag: ${siteTag}\n   创建时间: ${created}`;
+      });
+
+      return `Web Analytics 站点列表（共 ${items.length} 个）:\n${lines.join("\n")}\n\n提示: 详细分析数据请访问 Cloudflare Dashboard → Analytics & Logs → Web Analytics。`;
+    } catch (err: any) {
+      return `获取 Web Analytics 失败: ${err.message ?? err}\n\n提示: 该功能可能需要开启 Web Analytics 并确保 API Token 有相应权限。`;
     }
   });
 

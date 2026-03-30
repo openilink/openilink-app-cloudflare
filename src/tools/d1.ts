@@ -60,6 +60,19 @@ const definitions: ToolDefinition[] = [
       required: ["account_id", "name"],
     },
   },
+  {
+    name: "delete_d1_database",
+    description: "删除 D1 数据库（不可恢复）",
+    command: "delete_d1_database",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        database_id: { type: "string", description: "D1 数据库 ID" },
+      },
+      required: ["account_id", "database_id"],
+    },
+  },
 ];
 
 /** 创建 D1 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
@@ -176,6 +189,22 @@ function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
       return `D1 数据库创建成功!\n名称: ${db.name ?? name}\nID: ${db.uuid ?? db.id ?? "N/A"}\n版本: ${db.version ?? "N/A"}`;
     } catch (err: any) {
       return `创建 D1 数据库失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 删除 D1 数据库
+  handlers.set("delete_d1_database", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const databaseId: string = ctx.args.database_id ?? "";
+
+    try {
+      await (getClient() as any).d1.database.delete(databaseId, {
+        account_id: accountId,
+      });
+
+      return `D1 数据库已删除!\n数据库 ID: ${databaseId}\n\n注意: 删除操作不可恢复，数据库中的所有数据已永久清除。`;
+    } catch (err: any) {
+      return `删除 D1 数据库失败: ${err.message ?? err}`;
     }
   });
 

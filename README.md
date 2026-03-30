@@ -1,6 +1,6 @@
 # OpeniLink Cloudflare App
 
-通过微信管理 Cloudflare -- 20 个 Tools，涵盖 DNS / Workers / R2 / 缓存 / SSL / 防火墙 / 流量统计。
+通过微信管理 Cloudflare -- 68 个 Tools，全面覆盖 DNS / Workers / R2 / D1 / KV / Tunnels / Pages / 缓存 / SSL / 安全防护 / 流量统计 / 域名设置。
 
 ## 功能概览
 
@@ -11,32 +11,89 @@
 - `update_dns_record` - 更新 DNS 记录
 - `delete_dns_record` - 删除 DNS 记录
 
-### Workers 管理 (4 Tools)
+### Workers 管理 (10 Tools)
 - `list_workers` - 列出 Workers 脚本
 - `get_worker_info` - 获取 Worker 详情
 - `list_worker_routes` - 列出 Worker 路由
 - `get_worker_logs` - 查看 Worker 日志
+- `deploy_worker` - 部署 Worker 脚本
+- `delete_worker` - 删除 Worker 脚本
+- `list_worker_cron_triggers` - 列出定时触发器
+- `list_worker_secrets` - 列出 Worker Secrets
+- `create_worker_secret` - 创建/更新 Secret
+- `delete_worker_secret` - 删除 Secret
 
 ### 缓存管理 (2 Tools)
 - `purge_cache_all` - 清除全部缓存
 - `purge_cache_urls` - 清除指定 URL 缓存
 
-### 流量与配置 (2 Tools)
-- `get_zone_analytics` - 域名流量统计
+### 流量与分析 (4 Tools)
+- `get_zone_analytics` - 域名基本信息
 - `get_zone_settings` - 域名配置查看
+- `get_traffic_analytics` - 流量分析数据
+- `get_web_analytics` - Web Analytics 站点列表
 
-### SSL 证书 (2 Tools)
+### SSL 证书 (4 Tools)
 - `get_ssl_status` - SSL 证书状态
 - `list_certificates` - 列出证书
+- `order_ssl_certificate` - 订购高级 SSL 证书
+- `delete_ssl_certificate` - 删除证书包
 
-### R2 存储 (3 Tools)
+### R2 存储 (5 Tools)
 - `list_r2_buckets` - 列出 R2 桶
 - `list_r2_objects` - 列出桶内对象
 - `get_r2_bucket_info` - 桶详情
+- `create_r2_bucket` - 创建 R2 桶
+- `delete_r2_bucket` - 删除 R2 桶
 
-### 防火墙 (2 Tools)
+### 安全防护 (10 Tools)
 - `list_firewall_rules` - 列出防火墙规则
-- `get_security_events` - 安全事件
+- `get_security_events` - 安全事件概览
+- `list_waf_rules` - 列出 WAF 规则集
+- `create_ip_block` - 封禁 IP
+- `delete_ip_block` - 取消 IP 封禁
+- `list_rate_limits` - 列出速率限制
+- `create_waf_rule` - 创建 WAF 自定义规则
+- `update_waf_rule` - 更新 WAF 规则
+- `delete_waf_rule` - 删除 WAF 规则
+
+### D1 数据库 (5 Tools)
+- `list_d1_databases` - 列出 D1 数据库
+- `get_d1_database` - 数据库详情
+- `query_d1` - 执行 SQL 查询
+- `create_d1_database` - 创建数据库
+- `delete_d1_database` - 删除数据库
+
+### KV 存储 (5 Tools)
+- `list_kv_namespaces` - 列出 KV 命名空间
+- `create_kv_namespace` - 创建命名空间
+- `get_kv_value` - 读取 KV 值
+- `put_kv_value` - 写入 KV 值
+- `delete_kv_value` - 删除 KV 值
+
+### Tunnels 隧道 (6 Tools)
+- `list_tunnels` - 列出隧道
+- `get_tunnel` - 隧道详情
+- `create_tunnel` - 创建隧道
+- `delete_tunnel` - 删除隧道
+- `get_tunnel_config` - 获取隧道配置
+- `update_tunnel_config` - 更新隧道配置
+
+### Pages 托管 (5 Tools)
+- `list_pages_projects` - 列出 Pages 项目
+- `get_pages_project` - 项目详情
+- `list_pages_deployments` - 列出部署记录
+- `delete_pages_project` - 删除 Pages 项目
+- `retry_pages_deployment` - 重试部署
+
+### 域名设置 (7 Tools)
+- `list_zone_settings` - 列出域名所有设置
+- `update_zone_setting` - 更新域名设置
+- `enable_always_https` - 开启强制 HTTPS
+- `set_ssl_mode` - 设置 SSL 模式
+- `pause_zone` - 暂停域名
+- `resume_zone` - 恢复域名
+- `delete_zone` - 删除域名
 
 ## 快速开始
 
@@ -73,7 +130,7 @@ docker compose up -d
 | `HUB_URL` | 是 | - | OpeniLink Hub 地址 |
 | `BASE_URL` | 是 | - | 本 App 公网地址 |
 | `CLOUDFLARE_API_TOKEN` | 是 | - | Cloudflare API Token |
-| `CLOUDFLARE_ACCOUNT_ID` | 否 | - | Account ID（Workers/R2 需要） |
+| `CLOUDFLARE_ACCOUNT_ID` | 否 | - | Account ID（Workers/R2/D1 需要） |
 | `PORT` | 否 | 8099 | HTTP 监听端口 |
 | `DB_PATH` | 否 | data/cloudflare.db | SQLite 数据库路径 |
 
@@ -100,13 +157,15 @@ docker run -d \
 - DNS 记录: 无限制
 - Workers: 10 万请求/天
 - R2 存储: 10 GB
+- D1 数据库: 5 GB
+- KV 存储: 1 GB
 
 ### 创建 API Token
 
 1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens)
 2. 点击 **Create Token**
 3. 选择 **Edit zone DNS** 模板（或自定义权限）
-4. 根据需要添加 Workers / R2 / Firewall 等权限
+4. 根据需要添加 Workers / R2 / Firewall / D1 / Pages / Tunnels 等权限
 5. 复制 Token 并设置为 `CLOUDFLARE_API_TOKEN`
 
 ## 使用方式
@@ -121,6 +180,12 @@ docker run -d \
 - "帮我给 example.com 添加一条 A 记录指向 1.2.3.4"
 - "清除 example.com 的全部缓存"
 - "查看 Workers 列表"
+- "封禁 IP 1.2.3.4"
+- "创建一个 WAF 规则阻止来自特定国家的请求"
+- "暂停 example.com 的 Cloudflare 代理"
+- "把 SSL 模式设成 strict"
+- "删除 D1 数据库 xxx"
+- "查看隧道配置并添加新路由"
 
 ### 命令调用
 
@@ -128,6 +193,7 @@ docker run -d \
 
 - `/list_zones --count 10`
 - `/create_dns_record --zone_id xxx --type A --name www --content 1.2.3.4`
+- `/create_waf_rule --zone_id xxx --expression "ip.src == 1.2.3.4" --action block`
 
 ### AI 自动调用
 

@@ -98,6 +98,48 @@ const definitions: ToolDefinition[] = [
       required: ["account_id", "script_name"],
     },
   },
+  {
+    name: "list_worker_secrets",
+    description: "列出 Worker 的环境变量 Secrets",
+    command: "list_worker_secrets",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        script_name: { type: "string", description: "Worker 脚本名称" },
+      },
+      required: ["account_id", "script_name"],
+    },
+  },
+  {
+    name: "create_worker_secret",
+    description: "创建或更新 Worker Secret 环境变量",
+    command: "create_worker_secret",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        script_name: { type: "string", description: "Worker 脚本名称" },
+        secret_name: { type: "string", description: "Secret 名称" },
+        secret_text: { type: "string", description: "Secret 值" },
+      },
+      required: ["account_id", "script_name", "secret_name", "secret_text"],
+    },
+  },
+  {
+    name: "delete_worker_secret",
+    description: "删除 Worker Secret 环境变量",
+    command: "delete_worker_secret",
+    parameters: {
+      type: "object",
+      properties: {
+        account_id: { type: "string", description: "Cloudflare Account ID" },
+        script_name: { type: "string", description: "Worker 脚本名称" },
+        secret_name: { type: "string", description: "Secret 名称" },
+      },
+      required: ["account_id", "script_name", "secret_name"],
+    },
+  },
 ];
 
 /** 创建 Workers 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
@@ -281,6 +323,72 @@ function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
       return `Worker "${scriptName}" 定时触发器（共 ${items.length} 个）:\n${lines.join("\n")}`;
     } catch (err: any) {
       return `列出定时触发器失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 列出 Worker Secrets
+  handlers.set("list_worker_secrets", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const scriptName: string = ctx.args.script_name ?? "";
+
+    try {
+      const res = await (getClient() as any).workers.scripts.secrets.list(scriptName, {
+        account_id: accountId,
+      });
+      const secrets = res.result ?? res ?? [];
+
+      if (Array.isArray(secrets) && secrets.length === 0) {
+        return `Worker "${scriptName}" 暂无 Secrets`;
+      }
+
+      const items = Array.isArray(secrets) ? secrets : [secrets];
+      const lines = items.map((s: any, i: number) => {
+        const type = s.type ?? "secret_text";
+        return `${i + 1}. ${s.name}\n   类型: ${type}`;
+      });
+
+      return `Worker "${scriptName}" Secrets（共 ${items.length} 个）:\n${lines.join("\n")}\n\n注意: Secret 值不可查看，仅展示名称。`;
+    } catch (err: any) {
+      return `列出 Worker Secrets 失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 创建/更新 Worker Secret
+  handlers.set("create_worker_secret", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const scriptName: string = ctx.args.script_name ?? "";
+    const secretName: string = ctx.args.secret_name ?? "";
+    const secretText: string = ctx.args.secret_text ?? "";
+
+    try {
+      await (getClient() as any).workers.scripts.secrets.update(scriptName, {
+        account_id: accountId,
+        name: secretName,
+        text: secretText,
+        type: "secret_text",
+      });
+
+      return `Worker Secret 设置成功!\nWorker: ${scriptName}\nSecret: ${secretName}\n\n提示: 如果该 Secret 已存在则会被覆盖。`;
+    } catch (err: any) {
+      return `创建 Worker Secret 失败: ${err.message ?? err}`;
+    }
+  });
+
+  // 删除 Worker Secret
+  handlers.set("delete_worker_secret", async (ctx) => {
+    const accountId: string = ctx.args.account_id ?? "";
+    const scriptName: string = ctx.args.script_name ?? "";
+    const secretName: string = ctx.args.secret_name ?? "";
+
+    try {
+      await (getClient() as any).workers.scripts.secrets.delete(secretName, {
+        account_id: accountId,
+        script_name: scriptName,
+      });
+
+      return `Worker Secret 已删除!\nWorker: ${scriptName}\nSecret: ${secretName}`;
+    } catch (err: any) {
+      return `删除 Worker Secret 失败: ${err.message ?? err}`;
     }
   });
 
