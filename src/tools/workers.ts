@@ -60,8 +60,8 @@ const definitions: ToolDefinition[] = [
   },
 ];
 
-/** 创建 Workers 模块的 handler 映射 */
-function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
+/** 创建 Workers 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
+function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
 
   // 列出 Workers
@@ -69,7 +69,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     const accountId: string = ctx.args.account_id ?? "";
 
     try {
-      const res = await client.workers.scripts.list({ account_id: accountId });
+      const res = await getClient().workers.scripts.list({ account_id: accountId });
       const scripts = res.result ?? [];
 
       if (scripts.length === 0) {
@@ -87,26 +87,39 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     }
   });
 
-  // Worker 详情
+  // Worker 详情（scripts.get 返回脚本源码字符串，内容过长不适合展示，改用 settings 获取元信息）
   handlers.set("get_worker_info", async (ctx) => {
     const accountId: string = ctx.args.account_id ?? "";
     const scriptName: string = ctx.args.script_name ?? "";
 
     try {
-      // 通过 settings 获取 Worker 元信息
-      const res = await client.workers.scripts.get(scriptName, {
+      const settings = await getClient().workers.scripts.settings.get(scriptName, {
         account_id: accountId,
       });
-      const script = res as any;
+      const meta = settings as any;
 
       const lines = [
         `Worker: ${scriptName}`,
         `Account: ${accountId}`,
       ];
 
-      if (script.modified_on) lines.push(`最后修改: ${script.modified_on}`);
-      if (script.created_on) lines.push(`创建时间: ${script.created_on}`);
-      if (script.etag) lines.push(`ETag: ${script.etag}`);
+      if (meta.modified_on) lines.push(`最后修改: ${meta.modified_on}`);
+      if (meta.created_on) lines.push(`创建时间: ${meta.created_on}`);
+      if (meta.logpush !== undefined) lines.push(`日志推送: ${meta.logpush ? "已启用" : "未启用"}`);
+      if (meta.compatibility_date) lines.push(`兼容日期: ${meta.compatibility_date}`);
+
+      // 展示绑定信息
+      const bindings = meta.bindings ?? [];
+      if (bindings.length > 0) {
+        lines.push("");
+        lines.push(`绑定（共 ${bindings.length} 个）:`);
+        for (const b of bindings) {
+          lines.push(`  - ${b.type}: ${b.name ?? b.namespace_id ?? ""}`);
+        }
+      }
+
+      lines.push("");
+      lines.push("提示: Worker 脚本内容较长，请使用 list_workers 查看概览或通过 Dashboard 查看源码");
 
       return lines.join("\n");
     } catch (err: any) {
@@ -119,7 +132,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     const zoneId: string = ctx.args.zone_id ?? "";
 
     try {
-      const res = await client.workers.routes.list({ zone_id: zoneId });
+      const res = await getClient().workers.routes.list({ zone_id: zoneId });
       const routes = res.result ?? [];
 
       if (routes.length === 0) {

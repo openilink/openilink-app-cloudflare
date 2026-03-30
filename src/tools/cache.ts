@@ -35,8 +35,8 @@ const definitions: ToolDefinition[] = [
   },
 ];
 
-/** 创建 Cache 模块的 handler 映射 */
-function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
+/** 创建 Cache 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
+function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
 
   // 清除全部缓存
@@ -44,7 +44,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     const zoneId: string = ctx.args.zone_id ?? "";
 
     try {
-      await client.cache.purge({
+      await getClient().cache.purge({
         zone_id: zoneId,
         purge_everything: true,
       });
@@ -70,7 +70,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     }
 
     try {
-      await client.cache.purge({
+      await getClient().cache.purge({
         zone_id: zoneId,
         files: urls,
       });

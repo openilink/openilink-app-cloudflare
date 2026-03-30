@@ -1,5 +1,10 @@
 /**
  * 主入口文件 - 启动 HTTP 服务器
+ *
+ * per-installation 凭证隔离：
+ * 不在启动时创建全局 Cloudflare client，而是在处理 command 时根据
+ * installation 的 config（用户填写的 API Token）动态创建，
+ * 环境变量作为默认值兜底。
  */
 import http from "node:http";
 import Cloudflare from "cloudflare";
@@ -10,7 +15,7 @@ import { Router } from "./router.js";
 import { handleWebhook } from "./hub/webhook.js";
 import { handleOAuthSetup, handleOAuthRedirect } from "./hub/oauth.js";
 import { getManifest } from "./hub/manifest.js";
-import { collectAllTools } from "./tools/index.js";
+import { collectAllTools, setCurrentClient } from "./tools/index.js";
 import type { HubEvent, Installation } from "./hub/types.js";
 
 /** 解析请求 URL 的路径和方法 */
@@ -18,6 +23,27 @@ function parseRequest(req: http.IncomingMessage): { method: string; pathname: st
   const method = (req.method ?? "GET").toUpperCase();
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   return { method, pathname: url.pathname };
+}
+
+// ─── per-installation Cloudflare client 缓存 ───
+
+/** 以 apiToken 为 key 缓存 Cloudflare client，避免重复创建 */
+const clientCache = new Map<string, Cloudflare>();
+
+/**
+ * 根据 installation 的用户配置或环境变量默认值获取 Cloudflare client
+ * @param installation 安装记录（含用户填写的 config）
+ * @param defaultApiToken 环境变量中的默认 API Token
+ */
+function getClientForInstallation(installation: Installation, defaultApiToken: string): Cloudflare {
+  // 优先使用 installation 用户配置的 API Token，否则用环境变量默认值
+  const apiToken = installation.config?.cloudflare_api_token || defaultApiToken;
+  let client = clientCache.get(apiToken);
+  if (!client) {
+    client = new Cloudflare({ apiToken });
+    clientCache.set(apiToken, client);
+  }
+  return client;
 }
 
 async function main(): Promise<void> {
@@ -29,15 +55,11 @@ async function main(): Promise<void> {
   const store = new Store(config.dbPath);
   console.log("[main] 数据库初始化完成");
 
-  // 3. 初始化 Cloudflare SDK 客户端
-  const client = new Cloudflare({ apiToken: config.cloudflareApiToken });
-  console.log("[main] Cloudflare 客户端初始化完成");
-
-  // 4. 收集所有 tools
-  const { definitions, handlers } = collectAllTools(client);
+  // 3. 收集所有 tools（不再需要传入 client，handler 内部通过 getCurrentClient() 获取）
+  const { definitions, handlers } = collectAllTools();
   console.log(`[main] 已注册 ${definitions.length} 个工具`);
 
-  // 5. 初始化路由器
+  // 4. 初始化路由器
   const router = new Router(handlers);
 
   /** 获取 HubClient 实例（用于异步回复等场景） */
@@ -47,16 +69,22 @@ async function main(): Promise<void> {
 
   /**
    * 处理 command 事件（同步/异步超时由 webhook 层控制）
+   * 每次根据 installation 的配置创建对应的 Cloudflare client
    * 返回工具执行结果文本，null 表示无需回复
    */
   async function onCommand(event: HubEvent, installation: Installation): Promise<string | null> {
     if (!event.event) return null;
+
+    // 根据 installation 配置获取对应的 Cloudflare client，实现用户隔离
+    const client = getClientForInstallation(installation, config.cloudflareApiToken);
+    setCurrentClient(client);
+
     const hubClient = getHubClient(installation);
     const result = await router.handleCommand(event, installation, hubClient);
     return result;
   }
 
-  // 6. 创建 HTTP 服务器
+  // 5. 创建 HTTP 服务器
   const server = http.createServer(async (req, res) => {
     const { method, pathname } = parseRequest(req);
 
@@ -88,6 +116,13 @@ async function main(): Promise<void> {
           req.on("error", reject);
         });
         const data = JSON.parse(body.toString());
+
+        // 解析 Hub 传来的用户配置
+        let installConfig: Record<string, string> = {};
+        if (data.config && typeof data.config === "object") {
+          installConfig = data.config;
+        }
+
         store.saveInstallation({
           id: data.installation_id,
           hubUrl: data.hub_url || config.hubUrl,
@@ -96,6 +131,7 @@ async function main(): Promise<void> {
           appToken: data.app_token,
           webhookSecret: data.webhook_secret,
           createdAt: new Date().toISOString(),
+          config: installConfig,
         });
         console.log("[oauth] 模式2安装成功, installation_id:", data.installation_id);
         // 异步同步工具定义到 Hub
@@ -134,7 +170,7 @@ async function main(): Promise<void> {
     }
   });
 
-  // 7. 启动 HTTP 服务器
+  // 6. 启动 HTTP 服务器
   const port = parseInt(config.port, 10);
   server.listen(port, () => {
     console.log(`[main] HTTP 服务器已启动，监听端口 ${port}`);
@@ -154,7 +190,7 @@ async function main(): Promise<void> {
     }
   });
 
-  // 8. 优雅关闭
+  // 7. 优雅关闭
   const shutdown = (signal: string) => {
     console.log(`\n[main] 收到 ${signal} 信号，开始优雅关闭...`);
     server.close(() => {

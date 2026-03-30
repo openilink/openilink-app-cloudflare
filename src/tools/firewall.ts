@@ -34,8 +34,8 @@ const definitions: ToolDefinition[] = [
   },
 ];
 
-/** 创建 Firewall 模块的 handler 映射 */
-function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
+/** 创建 Firewall 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
+function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
 
   // 列出防火墙规则
@@ -43,7 +43,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     const zoneId: string = ctx.args.zone_id ?? "";
 
     try {
-      const res = await client.firewall.rules.list({ zone_id: zoneId });
+      const res = await getClient().firewall.rules.list({ zone_id: zoneId });
       const rules = res.result ?? [];
 
       if (rules.length === 0) {
@@ -70,10 +70,10 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
 
     try {
       // 获取域名安全级别设置作为安全概览
-      const secRes = await client.zones.settings.get("security_level", { zone_id: zoneId });
+      const secRes = await getClient().zones.settings.get("security_level", { zone_id: zoneId });
       const secLevel = (secRes as any).value ?? "unknown";
 
-      const zoneRes = await client.zones.get({ zone_id: zoneId });
+      const zoneRes = await getClient().zones.get({ zone_id: zoneId });
       const zone = zoneRes as any;
 
       const levelDesc: Record<string, string> = {

@@ -49,8 +49,8 @@ const definitions: ToolDefinition[] = [
   },
 ];
 
-/** 创建 R2 模块的 handler 映射 */
-function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
+/** 创建 R2 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
+function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
 
   // 列出 R2 桶
@@ -58,7 +58,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     const accountId: string = ctx.args.account_id ?? "";
 
     try {
-      const res = await client.r2.buckets.list({ account_id: accountId });
+      const res = await getClient().r2.buckets.list({ account_id: accountId });
       const buckets = res.buckets ?? [];
 
       if (buckets.length === 0) {
@@ -77,36 +77,17 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     }
   });
 
-  // 列出桶内对象
-  handlers.set("list_r2_objects", async (ctx) => {
-    const accountId: string = ctx.args.account_id ?? "";
-    const bucketName: string = ctx.args.bucket_name ?? "";
-    const prefix: string = ctx.args.prefix ?? "";
-
-    try {
-      const params: any = {
-        account_id: accountId,
-        bucket_name: bucketName,
-      };
-      if (prefix) params.prefix = prefix;
-
-      // 使用 Sippy API 或直接 S3 兼容接口
-      // 这里提供桶信息和提示
-      const lines = [
-        `R2 桶: ${bucketName}`,
-        `Account: ${accountId}`,
-        prefix ? `前缀过滤: ${prefix}` : "",
-        "",
-        "提示: R2 对象列表建议通过以下方式查看:",
-        "1. Cloudflare Dashboard → R2 → 选择桶",
-        "2. 使用 S3 兼容 API 或 rclone 工具",
-        "3. 使用 wrangler CLI: wrangler r2 object list " + bucketName,
-      ].filter(Boolean);
-
-      return lines.join("\n");
-    } catch (err: any) {
-      return `列出 R2 对象失败: ${err.message ?? err}`;
-    }
+  // 列出桶内对象（Cloudflare API 不直接支持，需通过 S3 兼容接口）
+  handlers.set("list_r2_objects", async (_ctx) => {
+    return [
+      "R2 对象列表需要通过 S3 兼容 API 访问，当前 Cloudflare API 不直接支持列出桶内对象。",
+      "",
+      "请使用以下方式查看桶内对象:",
+      "1. Cloudflare Dashboard → R2 → 选择桶",
+      "2. 使用 S3 兼容 API（需配置 R2 Access Key）",
+      "3. 使用 rclone 工具配置 S3 兼容端点",
+      "4. 使用 wrangler CLI: wrangler r2 object list <桶名>",
+    ].join("\n");
   });
 
   // 桶详情
@@ -115,7 +96,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     const bucketName: string = ctx.args.bucket_name ?? "";
 
     try {
-      const res = await client.r2.buckets.get(bucketName, { account_id: accountId });
+      const res = await getClient().r2.buckets.get(bucketName, { account_id: accountId });
       const bucket = res as any;
 
       const lines = [

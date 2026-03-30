@@ -86,8 +86,8 @@ const definitions: ToolDefinition[] = [
   },
 ];
 
-/** 创建 DNS 模块的 handler 映射 */
-function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
+/** 创建 DNS 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
+function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
 
   // 列出域名
@@ -95,7 +95,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     const count = (ctx.args.count as number) ?? 20;
 
     try {
-      const res = await client.zones.list({ per_page: count });
+      const res = await getClient().zones.list({ per_page: count });
       const zones = res.result ?? [];
 
       if (zones.length === 0) {
@@ -124,7 +124,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
         params.type = ctx.args.type;
       }
 
-      const res = await client.dns.records.list(params);
+      const res = await getClient().dns.records.list(params);
       const records = res.result ?? [];
 
       if (records.length === 0) {
@@ -161,7 +161,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
       if (ttl !== undefined) params.ttl = ttl;
       if (proxied !== undefined) params.proxied = proxied;
 
-      const res = await client.dns.records.create(params);
+      const res = await getClient().dns.records.create(params);
       const record = res as any;
 
       return `DNS 记录创建成功!\n类型: ${record.type}\n名称: ${record.name}\n值: ${record.content}\nID: ${record.id}`;
@@ -179,7 +179,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     const content: string = ctx.args.content ?? "";
 
     try {
-      const res = await client.dns.records.update(recordId, {
+      const res = await getClient().dns.records.update(recordId, {
         zone_id: zoneId,
         type: type as any,
         name,
@@ -200,7 +200,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     const recordId: string = ctx.args.record_id ?? "";
 
     try {
-      await client.dns.records.delete(recordId, { zone_id: zoneId });
+      await getClient().dns.records.delete(recordId, { zone_id: zoneId });
       return `DNS 记录已删除!\nRecord ID: ${recordId}`;
     } catch (err: any) {
       return `删除 DNS 记录失败: ${err.message ?? err}`;

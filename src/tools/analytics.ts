@@ -10,13 +10,12 @@ import type { ToolModule } from "./index.js";
 const definitions: ToolDefinition[] = [
   {
     name: "get_zone_analytics",
-    description: "获取域名流量统计数据",
+    description: "获取域名基本信息（状态、名称服务器、套餐等）",
     command: "get_zone_analytics",
     parameters: {
       type: "object",
       properties: {
         zone_id: { type: "string", description: "域名 Zone ID" },
-        since: { type: "string", description: "起始时间（ISO 日期，如 2024-01-01），默认最近 24 小时" },
       },
       required: ["zone_id"],
     },
@@ -35,47 +34,41 @@ const definitions: ToolDefinition[] = [
   },
 ];
 
-/** 创建 Analytics 模块的 handler 映射 */
-function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
+/** 创建 Analytics 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
+function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
 
-  // 域名流量统计
+  // 域名基本信息
   handlers.set("get_zone_analytics", async (ctx) => {
     const zoneId: string = ctx.args.zone_id ?? "";
-    const since: string = ctx.args.since ?? "";
 
     try {
-      // 使用 Zone Analytics API 获取流量概览
-      const params: any = { zone_id: zoneId };
-      if (since) {
-        params.since = since;
-      }
-
-      // 使用 zone 详情 + DNS analytics 作为替代方案
-      const zoneRes = await client.zones.get({ zone_id: zoneId });
+      const zoneRes = await getClient().zones.get({ zone_id: zoneId });
       const zone = zoneRes as any;
 
-      const sinceDisplay = since || "最近 24 小时";
       const lines = [
-        `域名流量统计: ${zone.name}`,
-        `统计时间: ${sinceDisplay}`,
+        `域名基本信息: ${zone.name}`,
         "",
         `域名状态: ${zone.status}`,
+        `套餐: ${zone.plan?.name ?? "N/A"}`,
         `名称服务器:`,
         ...(zone.name_servers ?? []).map((ns: string) => `  - ${ns}`),
       ];
 
       if (zone.meta) {
         lines.push("");
-        lines.push(`页面规则数: ${zone.meta.page_rule_quota ?? "N/A"}`);
+        lines.push(`页面规则配额: ${zone.meta.page_rule_quota ?? "N/A"}`);
       }
 
+      if (zone.created_on) lines.push(`创建时间: ${zone.created_on}`);
+      if (zone.modified_on) lines.push(`修改时间: ${zone.modified_on}`);
+
       lines.push("");
-      lines.push("提示: 详细流量数据请访问 Cloudflare Dashboard → Analytics");
+      lines.push("提示: 详细流量统计数据请访问 Cloudflare Dashboard → Analytics");
 
       return lines.join("\n");
     } catch (err: any) {
-      return `获取域名流量统计失败: ${err.message ?? err}`;
+      return `获取域名信息失败: ${err.message ?? err}`;
     }
   });
 
@@ -94,7 +87,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
 
       for (const settingId of keySettings) {
         try {
-          const res = await client.zones.settings.get(settingId, { zone_id: zoneId });
+          const res = await getClient().zones.settings.get(settingId, { zone_id: zoneId });
           const setting = res as any;
           const value = typeof setting.value === "object" ? JSON.stringify(setting.value) : setting.value;
           lines.push(`${settingId}: ${value}`);

@@ -34,8 +34,8 @@ const definitions: ToolDefinition[] = [
   },
 ];
 
-/** 创建 SSL 模块的 handler 映射 */
-function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
+/** 创建 SSL 模块的 handler 映射，接收 client 工厂函数实现 per-installation 隔离 */
+function createHandlers(getClient: () => Cloudflare): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
 
   // SSL 证书状态
@@ -44,11 +44,11 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
 
     try {
       // 获取 SSL 设置
-      const sslRes = await client.zones.settings.get("ssl", { zone_id: zoneId });
+      const sslRes = await getClient().zones.settings.get("ssl", { zone_id: zoneId });
       const ssl = sslRes as any;
 
       // 获取 zone 信息以展示域名
-      const zoneRes = await client.zones.get({ zone_id: zoneId });
+      const zoneRes = await getClient().zones.get({ zone_id: zoneId });
       const zone = zoneRes as any;
 
       const sslMode = ssl.value ?? "unknown";
@@ -80,7 +80,7 @@ function createHandlers(client: Cloudflare): Map<string, ToolHandler> {
     const zoneId: string = ctx.args.zone_id ?? "";
 
     try {
-      const res = await client.ssl.certificatePacks.list({ zone_id: zoneId });
+      const res = await getClient().ssl.certificatePacks.list({ zone_id: zoneId });
       const certs = res.result ?? [];
 
       if (certs.length === 0) {

@@ -35,6 +35,8 @@ export interface Installation {
   appToken: string;
   webhookSecret: string;
   createdAt: string;
+  /** 用户通过 config_schema 填写的配置（如 Cloudflare API Token 等） */
+  config?: Record<string, string>;
 }
 
 /** Tool 定义（注册到 Hub manifest） */
