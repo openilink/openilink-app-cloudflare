@@ -49,6 +49,22 @@ export class HubClient {
   }
 
   /**
+   * 从 Hub 拉取用户配置
+   * GET /bot/v1/config
+   * @returns 配置键值对，拉取失败返回空对象
+   */
+  async fetchConfig(): Promise<Record<string, string>> {
+    const url = `${this.hubUrl}/bot/v1/config`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${this.appToken}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return {};
+    const data = (await res.json()) as { config?: Record<string, string> };
+    return data.config || {};
+  }
+
+  /**
    * 同步工具定义到 Hub
    * PUT /bot/v1/app/tools
    */

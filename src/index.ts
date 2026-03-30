@@ -31,13 +31,10 @@ function parseRequest(req: http.IncomingMessage): { method: string; pathname: st
 const clientCache = new Map<string, Cloudflare>();
 
 /**
- * 根据 installation 的用户配置或环境变量默认值获取 Cloudflare client
- * @param installation 安装记录（含用户填写的 config）
- * @param defaultApiToken 环境变量中的默认 API Token
+ * 根据 apiToken 获取或缓存 Cloudflare client
+ * @param apiToken Cloudflare API Token
  */
-function getClientForInstallation(installation: Installation, defaultApiToken: string): Cloudflare {
-  // 优先使用 installation 用户配置的 API Token，否则用环境变量默认值
-  const apiToken = installation.config?.cloudflare_api_token || defaultApiToken;
+function getOrCreateClient(apiToken: string): Cloudflare {
   let client = clientCache.get(apiToken);
   if (!client) {
     client = new Cloudflare({ apiToken });
@@ -69,14 +66,16 @@ async function main(): Promise<void> {
 
   /**
    * 处理 command 事件（同步/异步超时由 webhook 层控制）
-   * 每次根据 installation 的配置创建对应的 Cloudflare client
+   * 从本地加密存储读取 per-installation 配置，动态创建对应的 Cloudflare client
    * 返回工具执行结果文本，null 表示无需回复
    */
   async function onCommand(event: HubEvent, installation: Installation): Promise<string | null> {
     if (!event.event) return null;
 
-    // 根据 installation 配置获取对应的 Cloudflare client，实现用户隔离
-    const client = getClientForInstallation(installation, config.cloudflareApiToken);
+    // 从加密存储读取 per-installation 配置，替代内存中的 installation.config
+    const localConfig = store.getDecryptedConfig(installation.id);
+    const apiToken = localConfig.cloudflare_api_token || config.cloudflareApiToken;
+    const client = getOrCreateClient(apiToken);
     setCurrentClient(client);
 
     const hubClient = getHubClient(installation);
@@ -134,8 +133,16 @@ async function main(): Promise<void> {
           config: installConfig,
         });
         console.log("[oauth] 模式2安装成功, installation_id:", data.installation_id);
+        // 安装后从 Hub 拉取用户配置并加密存储
+        const mode2HubClient = new HubClient(data.hub_url || config.hubUrl, data.app_token);
+        mode2HubClient.fetchConfig().then((userConfig) => {
+          if (Object.keys(userConfig).length > 0) {
+            store.saveEncryptedConfig(data.installation_id, userConfig);
+            console.log("[oauth] 模式2用户配置已加密存储");
+          }
+        }).catch((err) => console.error("[oauth] 模式2拉取配置失败:", err));
         // 异步同步工具定义到 Hub
-        new HubClient(data.hub_url || config.hubUrl, data.app_token)
+        mode2HubClient
           .syncTools(definitions)
           .catch((err) => console.error("[oauth] 模式2同步工具失败:", err));
         res.writeHead(200, { "Content-Type": "application/json" });
